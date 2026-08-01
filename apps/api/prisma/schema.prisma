@@ -1,0 +1,251 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum Role {
+  STUDENT
+  STARTUP
+  ADMIN
+}
+
+enum ApplicationStatus {
+  PENDING
+  REVIEWING
+  SHORTLISTED
+  REJECTED
+  HIRED
+}
+
+enum WorkType {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum InternshipStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  EXPIRED
+}
+
+// ─── User (Base Auth) ────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String?
+  role          Role      @default(STUDENT)
+  isActive      Boolean   @default(true)
+  isVerified    Boolean   @default(false)
+  googleId      String?   @unique
+  avatarUrl     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  student       Student?
+  company       Company?
+
+  @@map("users")
+}
+
+// ─── Student Profile ─────────────────────────────────────────────────────────
+
+model Student {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Personal
+  name              String
+  phone             String?
+  location          String?
+  bio               String?
+  avatarUrl         String?
+
+  // Education
+  college           String?
+  degree            String?
+  branch            String?
+  graduationYear    Int?
+  cgpa              Float?
+
+  // Links
+  githubUsername    String?
+  linkedinUrl       String?
+  portfolioUrl      String?
+  resumeUrl         String?
+  resumePublicId    String?
+
+  // Skills (stored as arrays)
+  programmingLangs  String[]
+  frameworks        String[]
+  databases         String[]
+  cloudPlatforms    String[]
+  tools             String[]
+
+  // GitHub cache (refreshed periodically)
+  githubData        Json?
+  githubScore       Int?
+
+  // AI Talent Passport
+  aiSummary         String?
+  aiSkillScores     Json?      // { "Node.js": 92, "React": 81, ... }
+  aiStrengths       String[]
+  aiImprovements    String[]
+  aiPassportUpdatedAt DateTime?
+
+  // Embeddings for semantic search (stored as JSON array for now)
+  embedding         Float[]
+
+  profileCompleted  Boolean   @default(false)
+  profileScore      Int       @default(0)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  projects          Project[]
+  experiences       Experience[]
+  applications      Application[]
+  savedBy           SavedCandidate[]
+
+  @@map("students")
+}
+
+// ─── Project ─────────────────────────────────────────────────────────────────
+
+model Project {
+  id           String   @id @default(uuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  title        String
+  description  String
+  technologies String[]
+  githubUrl    String?
+  liveUrl      String?
+  imageUrl     String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("projects")
+}
+
+// ─── Experience ───────────────────────────────────────────────────────────────
+
+model Experience {
+  id          String   @id @default(uuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  company     String
+  role        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime?
+  isCurrent   Boolean  @default(false)
+  location    String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("experiences")
+}
+
+// ─── Company ─────────────────────────────────────────────────────────────────
+
+model Company {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  website     String?
+  industry    String?
+  size        String?
+  description String?
+  logoUrl     String?
+  logoPublicId String?
+  location    String?
+
+  isVerified  Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  internships     Internship[]
+  savedCandidates SavedCandidate[]
+
+  @@map("companies")
+}
+
+// ─── Internship ───────────────────────────────────────────────────────────────
+
+model Internship {
+  id             String          @id @default(uuid())
+  companyId      String
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  position       String
+  description    String
+  skillsRequired String[]
+  duration       String
+  stipend        String?
+  location       String?
+  workType       WorkType        @default(REMOTE)
+  openings       Int             @default(1)
+  status         InternshipStatus @default(ACTIVE)
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  applications   Application[]
+
+  @@map("internships")
+}
+
+// ─── Application ─────────────────────────────────────────────────────────────
+
+model Application {
+  id            String            @id @default(uuid())
+  studentId     String
+  student       Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  internshipId  String
+  internship    Internship        @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+
+  status        ApplicationStatus @default(PENDING)
+  coverLetter   String?
+  matchScore    Float?
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([studentId, internshipId])
+  @@map("applications")
+}
+
+// ─── Saved Candidate ─────────────────────────────────────────────────────────
+
+model SavedCandidate {
+  id         String   @id @default(uuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  notes      String?
+
+  createdAt  DateTime @default(now())
+
+  @@unique([companyId, studentId])
+  @@map("saved_candidates")
+}

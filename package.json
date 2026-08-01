@@ -1,0 +1,25 @@
+{
+  "name": "career-verse-ai",
+  "version": "0.0.1",
+  "private": true,
+  "packageManager": "pnpm@11.18.0",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:generate": "pnpm --filter @career-verse/api prisma generate",
+    "db:migrate": "pnpm --filter @career-verse/api prisma migrate dev",
+    "db:studio": "pnpm --filter @career-verse/api prisma studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
