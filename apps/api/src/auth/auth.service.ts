@@ -1,129 +1,128 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcryptjs';
+import { createClerkClient } from '@clerk/backend';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, LoginDto } from './auth.dto';
 import { Role } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
+  private clerk: ReturnType<typeof createClerkClient>;
+
   constructor(
     private prisma: PrismaService,
-    private jwt: JwtService,
     private config: ConfigService,
-  ) {}
-
-  async register(dto: RegisterDto) {
-    const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (exists) throw new ConflictException('Email already registered');
-
-    const hashed = await bcrypt.hash(dto.password, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        password: hashed,
-        role: dto.role,
-      },
+  ) {
+    this.clerk = createClerkClient({
+      secretKey: this.config.get<string>('CLERK_SECRET_KEY'),
     });
-
-    // Auto-create profile skeleton
-    if (dto.role === Role.STUDENT) {
-      await this.prisma.student.create({
-        data: { userId: user.id, name: dto.name || dto.email.split('@')[0] },
-      });
-    } else if (dto.role === Role.STARTUP) {
-      await this.prisma.company.create({
-        data: { userId: user.id, name: dto.name || 'My Company' },
-      });
-    }
-
-    return this.signToken(user.id, user.email, user.role);
   }
 
-  async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (!user || !user.password) throw new UnauthorizedException('Invalid credentials');
+  /**
+   * Called after every Clerk sign-in/sign-up.
+   * Creates the user in our DB if they don't exist, or returns existing user.
+   * Returns isNew=true if the user hasn't completed onboarding (no role set).
+   */
+  async syncUser(clerkId: string) {
+    // Fetch user details from Clerk
+    const clerkUser = await this.clerk.users.getUser(clerkId);
+    const email = clerkUser.emailAddresses[0]?.emailAddress || '';
+    const firstName = clerkUser.firstName || '';
+    const lastName = clerkUser.lastName || '';
+    const name = [firstName, lastName].filter(Boolean).join(' ') || email.split('@')[0];
+    const avatarUrl = clerkUser.imageUrl || null;
 
-    const valid = await bcrypt.compare(dto.password, user.password);
-    if (!valid) throw new UnauthorizedException('Invalid credentials');
+    // Check if user already exists by clerkId
+    let user = await this.prisma.user.findUnique({ where: { clerkId } });
 
-    if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
-
-    return this.signToken(user.id, user.email, user.role);
-  }
-
-  async googleLogin(googleUser: {
-    googleId: string;
-    email: string;
-    name: string;
-    avatarUrl: string;
-  }) {
-    let user = await this.prisma.user.findFirst({
-      where: { OR: [{ googleId: googleUser.googleId }, { email: googleUser.email }] },
-    });
-
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          email: googleUser.email,
-          googleId: googleUser.googleId,
-          avatarUrl: googleUser.avatarUrl,
-          isVerified: true,
-          role: Role.STUDENT,
-        },
-      });
-      await this.prisma.student.create({
-        data: { userId: user.id, name: googleUser.name, avatarUrl: googleUser.avatarUrl },
-      });
-    } else if (!user.googleId) {
+    if (user) {
+      // Update avatar/email in case it changed in Clerk
       user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { googleId: googleUser.googleId, avatarUrl: googleUser.avatarUrl },
+        where: { clerkId },
+        data: { avatarUrl, email, isVerified: true },
+      });
+    } else {
+      // Check by email (migrating existing user)
+      const existingByEmail = await this.prisma.user.findUnique({ where: { email } });
+      if (existingByEmail) {
+        user = await this.prisma.user.update({
+          where: { email },
+          data: { clerkId, avatarUrl, isVerified: true },
+        });
+        // Update student/company name if profile exists
+        await this.updateProfileName(user, name, avatarUrl);
+      } else {
+        // Brand new user — no role assigned yet
+        user = await this.prisma.user.create({
+          data: { email, clerkId, avatarUrl, isVerified: true, role: Role.STUDENT },
+        });
+        return { ...user, name, isNew: true };
+      }
+    }
+
+    // Get name from student/company profile
+    const profile = await this.getProfile(user.id, user.role);
+    return { ...user, name: (profile as any)?.name || name, isNew: false };
+  }
+
+  /**
+   * Called on the onboarding page to set the user's role (STUDENT or STARTUP).
+   */
+  async setRole(userId: string, role: Role, name: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    await this.prisma.user.update({ where: { id: userId }, data: { role } });
+
+    // Create profile skeleton
+    if (role === Role.STUDENT) {
+      await this.prisma.student.upsert({
+        where: { userId },
+        update: {},
+        create: { userId, name },
+      });
+    } else if (role === Role.STARTUP) {
+      await this.prisma.company.upsert({
+        where: { userId },
+        update: {},
+        create: { userId, name },
       });
     }
 
-    return this.signToken(user.id, user.email, user.role);
+    const updated = await this.prisma.user.findUnique({ where: { id: userId } });
+    return { ...updated, name };
   }
 
-  async getProfile(userId: string) {
+  async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, role: true, avatarUrl: true, isVerified: true },
+      select: { id: true, email: true, role: true, avatarUrl: true, isVerified: true, clerkId: true },
     });
-    if (!user) throw new UnauthorizedException();
+    if (!user) throw new NotFoundException();
 
-    if (user.role === Role.STUDENT) {
-      const student = await this.prisma.student.findUnique({ where: { userId } });
-      return { ...user, profile: student };
-    } else if (user.role === Role.STARTUP) {
-      const company = await this.prisma.company.findUnique({ where: { userId } });
-      return { ...user, profile: company };
-    }
-    return user;
+    const profile = await this.getProfile(userId, user.role);
+    return { ...user, name: (profile as any)?.name, profile };
   }
 
-  private async signToken(userId: string, email: string, role: Role) {
-    const payload = { sub: userId, email, role };
-    const accessToken = await this.jwt.signAsync(payload, {
-      secret: this.config.get('JWT_SECRET'),
-      expiresIn: this.config.get('JWT_EXPIRES_IN') || '7d',
-    });
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true, role: true, avatarUrl: true },
-    });
-
-    let name: string | undefined;
+  private async getProfile(userId: string, role: Role) {
     if (role === Role.STUDENT) {
-      const s = await this.prisma.student.findUnique({ where: { userId } });
-      name = s?.name;
+      return this.prisma.student.findUnique({ where: { userId } });
     } else if (role === Role.STARTUP) {
-      const c = await this.prisma.company.findUnique({ where: { userId } });
-      name = c?.name;
+      return this.prisma.company.findUnique({ where: { userId } });
     }
+    return null;
+  }
 
-    return { accessToken, user: { ...user, name } };
+  private async updateProfileName(user: any, name: string, avatarUrl: string | null) {
+    if (user.role === Role.STUDENT) {
+      const student = await this.prisma.student.findUnique({ where: { userId: user.id } });
+      if (student && !student.name) {
+        await this.prisma.student.update({ where: { userId: user.id }, data: { name, avatarUrl } });
+      }
+    } else if (user.role === Role.STARTUP) {
+      const company = await this.prisma.company.findUnique({ where: { userId: user.id } });
+      if (company && company.name === 'My Company') {
+        await this.prisma.company.update({ where: { userId: user.id }, data: { name } });
+      }
+    }
   }
 }

@@ -7,25 +7,32 @@ export const api = axios.create({
   withCredentials: false,
 });
 
-// Attach token on each request
-api.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('cv_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+// Registered by ClerkTokenProvider on the client
+let tokenGetter: (() => Promise<string | null>) | null = null;
+
+export function setTokenGetter(getter: () => Promise<string | null>) {
+  tokenGetter = getter;
+}
+
+api.interceptors.request.use(async (config) => {
+  if (tokenGetter) {
+    try {
+      const token = await tokenGetter();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // Silently ignore — unauthenticated request
     }
   }
   return config;
 });
 
-// Auto-logout on 401
 api.interceptors.response.use(
   (res) => res,
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('cv_token');
-      localStorage.removeItem('cv_user');
-      window.location.href = '/auth/login';
+      // Clerk handles re-authentication — just reject
     }
     return Promise.reject(error);
   },

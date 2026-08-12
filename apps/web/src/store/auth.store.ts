@@ -1,85 +1,24 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { User } from '@/types';
-import api from '@/lib/api';
 
-interface AuthState {
-  user: User | null;
-  token: string | null;
+/**
+ * Stores only the DB-side user info (role, profile, name).
+ * Clerk manages auth state — this handles what our backend knows about the user.
+ */
+interface AppUserStore {
+  dbUser: (User & { name?: string; isNew?: boolean }) | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, role: string, name?: string) => Promise<void>;
-  logout: () => void;
-  setToken: (token: string, user: User) => void;
-  refreshUser: () => Promise<void>;
+  setDbUser: (user: (User & { name?: string; isNew?: boolean }) | null) => void;
+  setLoading: (v: boolean) => void;
+  clear: () => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      token: null,
-      isLoading: false,
-
-      login: async (email, password) => {
-        set({ isLoading: true });
-        try {
-          const { data } = await api.post('/auth/login', { email, password });
-          set({ user: data.user, token: data.accessToken, isLoading: false });
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('cv_token', data.accessToken);
-          }
-        } catch (e) {
-          set({ isLoading: false });
-          throw e;
-        }
-      },
-
-      register: async (email, password, role, name) => {
-        set({ isLoading: true });
-        try {
-          const { data } = await api.post('/auth/register', { email, password, role, name });
-          set({ user: data.user, token: data.accessToken, isLoading: false });
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('cv_token', data.accessToken);
-          }
-        } catch (e) {
-          set({ isLoading: false });
-          throw e;
-        }
-      },
-
-      logout: () => {
-        set({ user: null, token: null });
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('cv_token');
-          localStorage.removeItem('cv_user');
-        }
-      },
-
-      setToken: (token, user) => {
-        set({ token, user });
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('cv_token', token);
-        }
-      },
-
-      refreshUser: async () => {
-        const { token } = get();
-        if (!token) return;
-        try {
-          const { data } = await api.get('/auth/me');
-          set({ user: data });
-        } catch {
-          get().logout();
-        }
-      },
-    }),
-    {
-      name: 'cv-auth',
-      partialize: (state) => ({ user: state.user, token: state.token }),
-    },
-  ),
-);
+export const useAuthStore = create<AppUserStore>((set) => ({
+  dbUser: null,
+  isLoading: false,
+  setDbUser: (dbUser) => set({ dbUser }),
+  setLoading: (isLoading) => set({ isLoading }),
+  clear: () => set({ dbUser: null }),
+}));

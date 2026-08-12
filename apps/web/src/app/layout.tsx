@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import { ClerkProvider } from '@clerk/nextjs';
 import { ThemeProvider } from '@/components/shared/theme-provider';
 import { QueryProvider } from '@/components/shared/query-provider';
+import { ClerkTokenProvider } from '@/components/shared/clerk-token-provider';
 import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 
@@ -34,25 +36,23 @@ export const metadata: Metadata = {
     siteName: 'CareerVerse AI',
     images: [{ url: '/android-chrome-512x512.png', width: 512, height: 512, alt: 'CareerVerse AI' }],
   },
-  twitter: {
-    card: 'summary',
-    title: 'CareerVerse AI',
-    description: 'AI-Powered Talent Discovery Platform',
-    images: ['/android-chrome-512x512.png'],
-  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`}>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-          <QueryProvider>
-            {children}
-            <Toaster />
-          </QueryProvider>
-        </ThemeProvider>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" suppressHydrationWarning>
+        <body className={`${inter.variable} font-sans antialiased`}>
+          <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+            <QueryProvider>
+              <ClerkTokenProvider>
+                {children}
+                <Toaster />
+              </ClerkTokenProvider>
+            </QueryProvider>
+          </ThemeProvider>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

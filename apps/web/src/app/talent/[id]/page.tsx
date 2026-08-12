@@ -14,7 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import api from '@/lib/api';
-import { useAuthStore } from '@/store/auth.store';
+
 import { getInitials, getScoreColor, getScoreBg } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import type { Student } from '@/types';
@@ -22,7 +22,7 @@ import type { Student } from '@/types';
 export default function TalentProfilePage() {
   const { id } = useParams();
   const router = useRouter();
-  const { user } = useAuthStore();
+
 
   const { data: student, isLoading } = useQuery<Student>({
     queryKey: ['student', id],

@@ -12,13 +12,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useAuthStore } from '@/store/auth.store';
+
+import { useDbUser } from '@/hooks/use-db-user';
 import api from '@/lib/api';
 import { getInitials, getScoreColor } from '@/lib/utils';
 import type { Student, Application } from '@/types';
 
 export default function StudentDashboardPage() {
-  const { user } = useAuthStore();
+  const { clerkUser } = useDbUser();
 
   const { data: student } = useQuery<Student>({
     queryKey: ['student-profile'],
@@ -49,7 +50,7 @@ export default function StudentDashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">
-            Welcome back, {student?.name?.split(' ')[0] || user?.email?.split('@')[0]} 👋
+            Welcome back, {student?.name?.split(' ')[0] || clerkUser?.firstName || 'there'} 👋
           </h1>
           <p className="text-muted-foreground mt-1">Here's your talent dashboard overview</p>
         </div>

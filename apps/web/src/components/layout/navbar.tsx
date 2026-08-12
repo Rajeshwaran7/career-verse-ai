@@ -3,17 +3,17 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Moon, Sun, Zap, Menu, X, LogOut, User } from 'lucide-react';
+import { Moon, Sun, Zap, Menu, X } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
+import { SignInButton, SignUpButton, UserButton, useAuth } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useAuthStore } from '@/store/auth.store';
-import { getInitials } from '@/lib/utils';
+import { useDbUser } from '@/hooks/use-db-user';
 
 export function Navbar() {
   const { theme, setTheme } = useTheme();
-  const { user, logout } = useAuthStore();
+  const { isSignedIn } = useAuth();
+  const { dbUser } = useDbUser();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -23,13 +23,14 @@ export function Navbar() {
     { href: '/#features', label: 'Features' },
   ];
 
-  const dashboardPath = user?.role === 'STUDENT'
-    ? '/student/dashboard'
-    : user?.role === 'STARTUP'
-    ? '/startup/dashboard'
-    : user?.role === 'ADMIN'
-    ? '/admin/dashboard'
-    : null;
+  const dashboardPath =
+    dbUser?.role === 'STUDENT'
+      ? '/student/dashboard'
+      : dbUser?.role === 'STARTUP'
+        ? '/startup/dashboard'
+        : dbUser?.role === 'ADMIN'
+          ? '/admin/dashboard'
+          : null;
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl">
@@ -70,33 +71,35 @@ export function Navbar() {
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           </Button>
 
-          {user ? (
+          {isSignedIn ? (
             <div className="flex items-center gap-2">
               {dashboardPath && (
                 <Button variant="outline" size="sm" asChild>
                   <Link href={dashboardPath}>Dashboard</Link>
                 </Button>
               )}
-              <Avatar className="h-8 w-8 cursor-pointer" onClick={logout}>
-                <AvatarImage src={user.avatarUrl} />
-                <AvatarFallback className="text-xs gradient-primary text-white">
-                  {user.name ? getInitials(user.name) : <User className="h-4 w-4" />}
-                </AvatarFallback>
-              </Avatar>
+              <UserButton
+                afterSignOutUrl="/"
+                appearance={{
+                  elements: {
+                    avatarBox: 'h-8 w-8',
+                  },
+                }}
+              />
             </div>
           ) : (
             <>
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/auth/login">Log in</Link>
-              </Button>
-              <Button variant="gradient" size="sm" asChild>
-                <Link href="/auth/register">Get Started</Link>
-              </Button>
+              <SignInButton mode="redirect">
+                <Button variant="ghost" size="sm">Log in</Button>
+              </SignInButton>
+              <SignUpButton mode="redirect">
+                <Button variant="gradient" size="sm">Get Started</Button>
+              </SignUpButton>
             </>
           )}
         </div>
 
-        {/* Mobile menu */}
+        {/* Mobile menu toggle */}
         <Button
           variant="ghost"
           size="icon"
@@ -125,18 +128,16 @@ export function Navbar() {
             </Link>
           ))}
           <div className="flex gap-2 pt-2">
-            {user ? (
-              <Button variant="outline" size="sm" onClick={logout} className="gap-2">
-                <LogOut className="h-4 w-4" /> Sign out
-              </Button>
+            {isSignedIn ? (
+              <UserButton afterSignOutUrl="/" />
             ) : (
               <>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href="/auth/login">Log in</Link>
-                </Button>
-                <Button variant="gradient" size="sm" asChild>
-                  <Link href="/auth/register">Get Started</Link>
-                </Button>
+                <SignInButton mode="redirect">
+                  <Button variant="outline" size="sm">Log in</Button>
+                </SignInButton>
+                <SignUpButton mode="redirect">
+                  <Button variant="gradient" size="sm">Get Started</Button>
+                </SignUpButton>
               </>
             )}
           </div>

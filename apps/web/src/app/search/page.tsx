@@ -16,7 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import api from '@/lib/api';
-import { useAuthStore } from '@/store/auth.store';
+import { useAuth } from '@clerk/nextjs';
+import { useDbUser } from '@/hooks/use-db-user';
 import { getInitials, getScoreColor, truncate } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import type { Student, SearchResult } from '@/types';
@@ -25,8 +26,8 @@ const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR + i - 1);
 
 export default function SearchPage() {
-  const { user } = useAuthStore();
-  const [query, setQuery] = useState('');
+  const { isSignedIn } = useAuth();
+  const { dbUser } = useDbUser();
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [location, setLocation] = useState('');
   const [college, setCollege] = useState('');
@@ -57,7 +58,7 @@ export default function SearchPage() {
   };
 
   const handleSave = async (studentId: string) => {
-    if (!user || user.role !== 'STARTUP') {
+    if (!isSignedIn || dbUser?.role !== 'STARTUP') {
       toast({ title: 'Login as a startup to save candidates', variant: 'destructive' });
       return;
     }
@@ -200,7 +201,7 @@ export default function SearchPage() {
                 index={i}
                 onSave={() => handleSave(student.id)}
                 isSaving={savingId === student.id}
-                showSave={!!user && user.role === 'STARTUP'}
+                showSave={!!(isSignedIn && dbUser?.role === 'STARTUP')}
               />
             ))}
           </div>
